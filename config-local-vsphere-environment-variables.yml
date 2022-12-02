@@ -1,0 +1,54 @@
+#!/usr/bin/ansible-playbook --inventory=inventory
+- name: "Konductor | Provision UPI Infra | config-local-vsphere-environment-variables.yml"
+  hosts: localhost
+  vars_files:
+  - vars/vault.yml
+  - vars/common.yml
+  - vars/environment.yml
+  vars:
+    module: "configure-vpshere-local-env-vars"
+  tasks:
+    - name: '{{ ansible_name_module }} | load vcenter config info template'
+      blockinfile:
+        path: "{{ ansible_env.HOME }}/.bashrc"
+        block: "{{ lookup('template','templates/vcenter-local-env.j2') }}"
+        insertafter: EOF
+        state: present
+      register: bashrc_update_out
+
+    - name: '{{ ansible_name_module }} | Cat bashrc file content'
+      shell: cat {{ ansible_env.HOME }}/.bashrc
+      register: bashrc_out
+
+    - name: '{{ ansible_name_module }} | Source bashrc file content'
+      shell: source {{ ansible_env.HOME }}/.bashrc
+      register: bashrc_srced
+
+    - name: '{{ ansible_name_module }} | Configure Bastion to trust vcenter cert'
+      when:
+        - trust_vcenter_certs is defined
+        - trust_vcenter_certs |bool
+      block:
+        - name: '{{ ansible_name_module }} | Copy vcenter certs into place'
+          set_fact:
+            vcenter_certs_files: "{{ query('fileglob', 'files/certs/*.crt') }}"
+          when:
+            - not vcenter_certs_files is defined or vcenter_certs_files == ''
+
+        - name: '{{ ansible_name_module }} | Print {{ vcenter_certs_files }} output'
+          debug:
+            var: vcenter_certs_files
+
+        - name: '{{ ansible_name_module }} | Copy vcenter certs into place'
+          become: true
+          copy:
+            src: "{{ item }}"
+            dest: "/etc/pki/ca-trust/source/anchors/{{ item | basename }}"
+            remote_src: true
+            force: true
+          loop: "{{ vcenter_certs_files }}"
+
+        - name: '{{ ansible_name_module }} | Apply vcenter certs to trust list '
+          become: true
+          shell: >
+             update-ca-trust

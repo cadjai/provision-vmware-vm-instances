@@ -1,0 +1,78 @@
+---
+- hosts: local
+  become: true
+  vars_files:
+  - vars/common.yml
+  - vars/environment.yml
+  - vars/vault.yml
+
+  tasks:
+    - name: Make sure appropriate packages are installed
+      yum:
+        name:
+          - ansible
+          - python3
+          - python3-devel
+          - git
+          - vim
+          - jq
+          - skopeo
+          - python3-libselinux
+          - unzip
+          - bind-utils
+          - yum-utils
+          - httpd-tools
+          - podman-1:3.4.2-9.module+el8.5.0+13852+150547f7.x86_64
+          - openscap-scanner
+        state: present
+
+    - name: Make sure appropriate python packages are installed
+      pip:
+        name: dnspython
+        state: present
+        extra_args: --user
+        executable: pip3
+
+    - name: Download binaries
+      get_url:
+        url: "{{ item.value.source }}"
+        dest: "{{ item.value.dest | default('/tmp', true) }}/{{ item.value.source | basename }}"
+        force: true
+      when:
+        - item.key != ''
+        - item.value.source is defined
+        - item.value.source != '' 
+      with_dict:
+        - "{{ clients }}"
+      register: clients_download_result
+
+    - name: Print client download output
+      debug:
+        var: clients_download_result.results
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | downloaded client paths'
+      set_fact:
+        downloaded_client_paths: "{{ clients_download_result.results | map(attribute='dest') | list }}"
+
+    - name: Print downloaded client paths output
+      debug:
+        var: downloaded_client_paths | list 
+        verbosity: 2
+
+    - name: Unpack downloaded clients tar.gz 1 of 2 
+      unarchive:
+        src: "{{ item }}"
+        dest: /usr/bin/
+      when:
+        - '"tar.gz" in item'
+      loop: "{{ downloaded_client_paths }}"
+      register: downloaded_client_install_result1
+
+    - name: Unpack downloaded clients zip 2 of 2
+      command: unzip -o -f "{{ item }}" -d /usr/bin/
+      when:
+        - '".zip" in item'
+      loop: "{{ downloaded_client_paths }}"
+      register: downloaded_client_install_result2
+

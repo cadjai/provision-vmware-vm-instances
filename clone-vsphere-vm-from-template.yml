@@ -1,0 +1,234 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- hosts: registry,local
+  become: true
+  vars_files:
+  - vars/environment.yml
+  - vars/vault.yml
+  vars:
+    module: "setup-bastion-vsphere"
+    ansible_name_module: " Pre Cluster Installation | {{ module }}"
+  pre_tasks:
+     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+       block:
+         - assert:
+             that:
+               - datacenter is defined and datacenter != ""
+             msg: " the datacenter  must be set and valid "
+         - assert:
+             that:
+               - datastore is defined and datastore != ""
+             msg: " the datastore  must be set and valid "
+         - assert:
+             that:
+               - vcenter_server is defined and vcenter_server != ""
+             msg: " the vcenter_server must be set and valid "
+         - assert:
+             that:
+               - vsphere_cluster is defined and vsphere_cluster != ""
+             msg: " the vsphere_cluster must be set and valid "
+         - assert:
+             that:
+               - vcenter_user is defined and vcenter_user != ""
+             msg: " the vcenter_user must be set and valid "
+         - assert:
+             that:
+               - vcenter_passwd is defined and vcenter_passwd != ""
+             msg: " the vcenter_passwd must be set and valid "
+         - assert:
+             that:
+               - cluster_name  is defined and cluster_name != ""
+             msg: " the cluster_name must be set "
+         - assert:
+             that:
+               - cluster_base_domain is defined and cluster_base_domain != ""
+             msg: " the cluster_base_domain must be set and valid and will be the base domain used for cluster dns "
+         - assert:
+             that:
+               - guest_id is defined and guest_id != ""
+             msg: " the guest_id must be set and valid "
+         - assert:
+             that:
+               - folder is defined and folder != ""
+             msg: " the folder must be set and valid "
+         #- assert:
+         #    that:
+         #      - resource_pool_id is defined and resource_pool_id != ""
+         #    msg: " the resource_pool_id must be set and valid "
+         #- assert:
+         #    that:
+         #      - network_id is defined and network_id != ""
+         #    msg: " the network_id must be set and valid "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
+      command: which govc
+      ignore_errors: yes
+      failed_when:
+        - govc_binary_check.rc > 0
+        - "not 'no govc' in govc_binary_check.stderr"
+      register: govc_binary_check
+
+    - name: '{{ ansible_name_module }} | shell:govc | Create new vm from template'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.create -on=false -force=true -g={{ rhcos_template }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -net={{ vsphere_vm_network }} {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - use_template is defined
+        - use_template | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vmclone_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Clone vm template into new vm'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.clone -on=false -force=true -vm={{ rhcos_template }} -folder={{ folder }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - not use_template is defined or not use_template | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vmclone_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Set Ignition Config on Cloned VM'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -e 'guestinfo.ignition.config.data={{ item.enc_ign_data }}' -e 'guestinfo.ignition.config.data.encoding=base64' -e 'disk.EnableUUID=TRUE'
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - use_static_ips is defined
+        - use_static_ips | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - vmclone_result is defined
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_ignition_update_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Update VM resource Config on Cloned VM'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -c={{ num_cpus[item.name.split('-')[0]] | default('4', true) }} -m={{ memory[item.name.split('-')[0]] | default('8', true) }} 
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - update_vm_resources is defined
+        - update_vm_resources | bool 
+        - use_static_ips is defined
+        - use_static_ips | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - vmclone_result is defined
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_resource_update_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Set Static IP and networking on Cloned VM'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -e 'guestinfo.afterburn.initrd.network-kargs=ip={{ item.ip }}::{{ gateway }}:{{ netmask }}:::none nameserver={{ dns_address }}'
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - use_static_ips is defined
+        - use_static_ips | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - vmclone_result is defined
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_staticip_update_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Set Static IP and networking on Cloned VM using customize'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.customize -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -gateway={{ gateway }} -ip={{ item.ip }} -dns-server={{ dns_address }} -netmask={{ netmask }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - use_static_ips is defined
+        - use_static_ips | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - vmclone_result is defined
+        - use_customize is defined
+        - use_customize | bool 
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_staticip_update_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Power on new vm'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - start_vms is defined
+        - start_vms | bool 
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - vmclone_result is defined
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_poweron_result
+      failed_when:
+        - '"cannot be performed in the current state" not in vm_poweron_result.stderr'
+        - vm_poweron_result.rc != 0

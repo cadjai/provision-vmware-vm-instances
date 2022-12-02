@@ -1,0 +1,145 @@
+###################################
+# Deployment Environment setup variables
+###################################
+custom_ca_file: "/tmp/ca-bundle.crt"
+custom_ca_cm_file: "/tmp/ca-bundle.yml"
+cluster_base_domain: '{{ vault_cluster_base_domain }}' 
+
+cluster_name: ""
+registry_ca_file: "/tmp/ca-bundle.crt"
+registry_pull_secret_file: "/tmp/config.json"
+use_multi_cidr: "false"
+
+ntp_servers:
+- pool.ntp.org
+ntp_maxpoll: 4
+
+
+###################################
+# Console Banner variables
+###################################
+banner_name: 'classification-banner'
+banner_text: 'UNCLASSIFIED'
+banner_color: '#ffffff'
+banner_background_color: '#006400'
+banner_location: 'BannerTopBottom'
+banner_link: ''
+###################################
+# End Console Banner variables
+###################################
+
+###################################
+# VMWare Vsphere Deployment Environment setup variables
+####################################
+staging_root_dir: '/root/deployment/vsphere/platform'
+deployment_staging_dir: '{{ staging_root_dir }}'
+use_ipi: 'false'
+use_cluster_os_image: 'false'
+host_cluster_os_image: 'false'   ### use to decide if the ova need to be hosted on the deployment bastion
+cluster_os_image: 'rhcos-vmware.x86_64.ova'   ### name of the ova file to  use to deploy the cluster
+cluster_os_image_sha256: 'ffebbd68e8a1f2a245ca19522c16c86f67f9ac8e4e0c1f0a812b068b16f7265d'
+cluster_os_image_local_path: ''  ### used only if the image is available locally on the deployment bastion host
+ova_file: '{{ cluster_os_image }}'
+api_vip: ''
+ingress_vip: ''
+domain_name: '{{ cluster_base_domain }}'
+make_masters_schedulable: 'true'
+vsphere_cluster: '{{ vault_vsphere_cluster }}'  ### the vcenter cluster to deploy the ocp cluster into
+datacenter: '{{ vault_datacenter }}'
+datastore: '{{ vault_datastore }}'
+vcenter_server: '{{ vault_vcenter_server }}'
+vcenter_user: '{{ vault_vcenter_user }}'
+vcenter_passwd: '{{ vault_vcenter_passwd }}'
+folder: '{{ vault_folder }}'
+create_folder: 'true'
+vm_template_hw_version: ''
+guest_id: 'rhcos_template'
+resource_pool_id: ''
+network_id: '{{ vault_network_id }}'
+network_adapter_type: 'vmxnet3'
+disk_thin_provisioned: 'false'
+rhcos_template: 'rhcos-template'
+use_static_ips: 'true'
+dns_address: ''
+gateway: ''
+netmask: ''
+instance_number:
+  - name: "master"
+    value: 3
+  - name: "worker"
+    value: 0
+  - name: "infra"
+    value: 0
+disk_size:
+  - name: "master"
+    value: 200
+  - name: "worker"
+    value: 200
+  - name: "infra"
+    value: 200
+memory:
+  - name: "master"
+    value: 32768
+  - name: "worker"
+    value: 32768
+  - name: "infra"
+    value: 65536
+num_cpus:
+  - name: "master"
+    value: 8
+  - name: "worker"
+    value: 8
+  - name: "infra"
+    value: 8
+num_cores:
+  - name: "master"
+    value: 2
+  - name: "worker"
+    value: 2
+  - name: "infra"
+    value: 2
+bootstrap: ''
+masters:
+  - name: 'master-0'
+    ip: ''
+  - name: 'master-1'
+    ip: ''
+  - name: 'master-2'
+    ip: ''
+workers:
+  - name: 'worker-0'
+    ip:  ''
+  - name: 'worker-1'
+    ip: ''
+  - name: 'worker-2'
+    ip: ''
+infras:
+  - name: 'infra-0'
+    ip:  ''
+  - name: 'infra-1'
+    ip: ''
+  - name: 'infra-2'
+    ip: ''
+worker_replica: '1'
+
+vm_template: 'bastion-host'
+newvm_names_list:
+  #- name: 'bootstrap'
+  #  ip: ''
+  #- name: 'master-0'
+  #  ip: ''
+  #- name: 'master-1'
+  #  ip: ''
+  #- name: 'master-2'
+  #  ip: ''
+  #- name: cadjai-bastion
+  #  ip: ''
+  - name: bastion
+    ip: ''
+    disk: '300G'
+
+vsphere_vm_network: '{{ network_id }}'
+part_disk_size: '320GB'
+resize_disk: 'true'
+luks_keyfile: '/tmp/luks-key'
+trust_vcenter_certs: 'true'

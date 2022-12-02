@@ -1,0 +1,184 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- hosts: registry,local
+  become: true
+  vars_files:
+  - vars/environment.yml
+  - vars/vault.yml
+  vars:
+    module: "setup-bastion-vsphere"
+    ansible_name_module: " Pre Cluster Installation | {{ module }}"
+    terraform_dir: "/root/platform/iac/shaman"
+  pre_tasks:
+     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+       block:
+         - assert:
+             that:
+               - datacenter is defined and datacenter != ""
+             msg: " the datacenter  must be set and valid "
+         - assert:
+             that:
+               - datastore is defined and datastore != ""
+             msg: " the datastore  must be set and valid "
+         - assert:
+             that:
+               - vcenter_server is defined and vcenter_server != ""
+             msg: " the vcenter_server must be set and valid "
+         - assert:
+             that:
+               - vsphere_cluster is defined and vsphere_cluster != ""
+             msg: " the vsphere_cluster must be set and valid "
+         - assert:
+             that:
+               - vcenter_user is defined and vcenter_user != ""
+             msg: " the vcenter_user must be set and valid "
+         - assert:
+             that:
+               - vcenter_passwd is defined and vcenter_passwd != ""
+             msg: " the vcenter_passwd must be set and valid "
+         - assert:
+             that:
+               - folder is defined and folder != ""
+             msg: " the folder must be set and valid "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
+      command: which govc
+      ignore_errors: yes
+      failed_when:
+        - govc_binary_check.rc > 0
+        - "not 'no govc' in govc_binary_check.stderr"
+      register: govc_binary_check
+
+    - name: '{{ ansible_name_module }} | shell:govc | collect folder info' 
+      shell: >
+        {{ govc_binary_check.stdout }} folder.info -verbose=true -dc {{ datacenter }} {{ folder }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      when:
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: folder_info_result
+      changed_when:
+      - folder_info_result.rc == 0
+      failed_when:
+      - '("folder" and "not found") not in folder_info_result.stderr'
+      - folder_info_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | debug | Print folder info output'
+      debug:
+        var: folder_info_result
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:govc | create folder if it does not exist'
+      shell: >
+        {{ govc_binary_check.stdout }} folder.create -dc={{ datacenter }} {{ folder }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      when:
+        - folder_info_result.stderr is defined
+        - '("folder" and "not found") in folder_info_result.stderr' 
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: folder_create_result
+      changed_when:
+      - folder_create_result.rc == 0
+      failed_when:
+      - '"already exists" not in folder_create_result.stderr'
+      - folder_create_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | debug | Print create folder output'
+      debug:
+        var: folder_create_result 
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:govc | Clone vm template into new vm'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.clone -vm={{ vm_template }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -on=false -force=true {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - (folder_info_result.rc==0 and folder_create_result.skipped is defined and folder_create_result.skipped | bool) or (folder_create_result.rc is defined and folder_create_result.rc == 0)
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vmclone_result
+
+    - name: '{{ ansible_name_module }} | shell:govc | Set Disk on Cloned VM'
+      shell: >
+        {{ govc_binary_check.stdout }} vm.disk.change -vm='{{ folder }}/{{ item.name }}' -dc={{ datacenter }} -disk.label "Hard disk 1" -size {{ item.disk }} 
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - item.disk is defined
+        - item.disk != ''
+        - vmclone_result is defined
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_staticip_update_result
+
+    - name: '{{ ansible_name_module }} | debug | Print vm clone output'
+      debug:
+        var: vmclone_result
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:govc | Power on new vm' 
+      shell: >
+        {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_poweron_result
+      failed_when:
+      - '"cannot be performed in the current state" not in vm_poweron_result.stderr'
+      - vm_poweron_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | debug | Print vm poweron output'
+      debug:
+        var: vm_poweron_result
+        verbosity: 2
+

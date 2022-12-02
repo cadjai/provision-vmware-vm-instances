@@ -1,0 +1,91 @@
+#!/usr/bin/ansible-playbook --inventory=inventory
+- name: "Konductor | Provision UPI Infra | config-local-vpshere-terraform-provider.yml"
+  hosts: localhost
+  vars_files:
+  - vars/vault.yml
+  - vars/common.yml
+  vars:
+    module: "configure-vpshere-terraform-provider-local"
+  tasks:
+    - name: '{{ ansible_name_module }} | Ensue Terraform is installed if applicable'
+      when:
+        - install_terraform is defined
+        - install_terraform | bool
+      block:
+        - name: '{{ ansible_name_module }} | Make sure appropriate packages are installed'
+          become: yes
+          yum:
+            name:
+              - yum-utils
+            state: present
+
+          #yum_repository:
+          #  name: hashicorp
+          #  description: Hashicorp Repo
+          #  file: hashicorp_repo
+          #  baseurl: 'https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo'
+          #  gpgcheck: no
+          #  async: no
+        - name: '{{ ansible_name_module }} | configure yum-config-manager'
+          become: yes
+          command: >
+            yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+
+        - name: '{{ ansible_name_module }} | Install terraform' 
+          become: yes
+          yum:
+            name:
+              - terraform
+            state: present
+
+    - name: '{{ ansible_name_module }} | install vpshere terraform provider'
+      when:
+        - install_terraform_provider is defined
+        - install_terraform_provider | bool
+      block:
+        - name: '{{ ansible_name_module }} | shell | get installed tf version '
+          shell: terraform version | head -n 1 | awk '{print $2}'
+          ignore_errors: true
+          register: ter_ver 
+
+        - name: '{{ ansible_name_module }} | file:state=directory | Ensure terraform provider directory exist '
+          file:
+            path: "{{ terraform_provider_dir }}"
+            state: directory
+            recurse: true
+
+        - name: '{{ ansible_name_module }} | file:state=directory | for each provider '
+          file:
+            path: "{{ terraform_provider_dir }}/{{ terraform_domain }}/{{ terraform_namespace }}/{{ install_terraform_provider_name }}/{{ install_terraform_provider_version }}/{{ terraform_provider_type }}"
+            state: directory
+            recurse: true
+
+        - name: '{{ ansible_name_module }} | unarchive | bundle provider files to host'
+          unarchive:
+            src: "{{ install_terraform_provider_binary }}"
+            remote_src: yes
+            dest: "{{ terraform_provider_dir}}/"
+            dest: "{{ terraform_provider_dir }}/{{ terraform_domain }}/{{ terraform_namespace }}/{{ install_terraform_provider_name }}/{{ install_terraform_provider_version }}/{{ terraform_provider_type }}"
+            mode: 0755
+          register: unbundle_out
+
+    - name: '{{ ansible_name_module }} | Configure vpshere terraform provider'
+      when:
+        - (install_terraform_provider is defined and install_terraform_provider | bool) or (config_terraform_provider is defined and config_terraform_provider | bool)
+      block:
+        - name: '{{ ansible_name_module }} | template | create terraform provider v14 config file'
+          template:
+            src: "templates/terraformrc-vsphere.j2"
+            dest: "{{ terraform_provider_dir }}/main.tf"
+            mode: 0755
+            force: yes
+
+        - name: '{{ ansible_name_module }} | shell:terraform.init | Initilize terraform provider module'
+          shell:
+            cmd: terraform init 
+            chdir: "{{ terraform_provider_dir }}"
+          failed_when:
+            - terraform_init.rc > 1
+            - " not 'not available for installation' in terraform_init.stderr "
+          register: terraform_init
+

@@ -1,0 +1,144 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- hosts: registry,local
+  vars_files:
+  - vars/environment.yml
+  - vars/vault.yml
+  vars:
+    module: "configure-bastion"
+    ansible_name_module: "Post Bastion Creation | {{ module }}"
+    terraform_dir: "/root/platform/iac/shaman"
+  pre_tasks:
+
+  tasks:
+    - name: '{{ ansible_name_module }} | lineinfile | add user to sudoers file' 
+      become: true
+      lineinfile:
+        path: /etc/sudoers
+        line: "{{ sudo_user | default(ansible_user, true) }}  ALL=(ALL)       NOPASSWD: ALL"
+        insertafter: EOF
+        state: present
+      when:
+        - add_user_to_sudoers is defined
+        - add_user_to_sudoers | bool 
+
+    - name: '{{ ansible_name_module }} | Configure firewalld' 
+      when:
+        - config_firewalld is defined
+        - config_firewalld | bool 
+      block: 
+        - name: '{{ ansible_name_module }} | yum | install firewalld on new vm' 
+          become: true
+          yum:
+            name: firewalld 
+            state: present
+
+        - name: '{{ ansible_name_module }} | start | firewalld on new vm' 
+          become: true
+          systemd:
+            name: firewalld
+            state: started
+            enabled: yes
+            daemon-reload: yes
+
+    - name: '{{ ansible_name_module }} | openssh | Generate SSH key on new vm' 
+      become: false
+      when:
+        - generate_ssh_key is defined
+        - generate_ssh_key | bool
+      block: 
+        - name: '{{ ansible_name_module }} | openssh | Generate SSH key '
+          openssh_keypair:
+            type: rsa
+            size: 4096
+            path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa"
+            owner: "{{ ansible_user }}" 
+            group: "{{ ansible_user }}" 
+
+        - name: '{{ ansible_name_module }} | file | Fix permission on public key'
+          file:
+            path: "{{ lookup('env', 'HOME') }}/.ssh/id_rsa.pub"
+            mode: '0644'
+            owner: "{{ ansible_user }}" 
+            group: "{{ ansible_user }}" 
+
+          #shell: >
+          # parted -s /dev/sda resizepart 3 {{ part_disk_size | default('300GB', true) }}
+    - name: '{{ ansible_name_module }} | shell:parted | Resize partition on new vm' 
+      become: true
+      when:
+        - resize_disk is defined
+        - resize_disk | bool
+      block: 
+        - name: '{{ ansible_name_module }} | shell:parted | Resize partition ' 
+          parted:
+            device: /dev/sda
+            resize: true
+            number: 3
+            part_end: "{{ part_disk_size | default('300GB', true) }}"
+            state: present
+          register: part_resize_result
+
+        - name: '{{ ansible_name_module }} | shell:partprobe | Refresh partition ' 
+          shell: partprobe
+          register: partprobe_result
+
+        #- name: '{{ ansible_name_module }} | shell:reboot | Resize partition ' 
+        #  shell: "sleep 5 && reboot"
+        #  async: 1
+        #  poll: 0
+
+        - name: '{{ ansible_name_module }} | shell:ls | retrieve disk partition name for luks device' 
+          shell: >
+            ls -l /dev/mapper/ | grep luks | awk '{print $9}'
+          ignore_errors: yes
+          register: luks_part_name
+
+        #- name: '{{ ansible_name_module }} | shell:cryptsetup | resize luks device' 
+        #  shell: >
+        #    cryptsetup resize /dev/mapper/{{ luks_part_name.stdout }}
+        #  when:
+        #    - luks_part_name.rc is defined
+        #    - luks_part_name.rc == 0 
+        #    - luks_part_name.stdout is defined
+        #    - luks_part_name.stdout != '' 
+        #  register: luks_part_resize_result
+
+        - name: '{{ ansible_name_module }} | shell:pvresize | resize luks device' 
+          shell: >
+            pvresize /dev/mapper/{{ luks_part_name.stdout }}
+          when:
+            #- luks_part_resize_result is defined
+            #- luks_part_resize_result.rc is defined
+            #- luks_part_resize_result.rc == 0 
+            - luks_part_name.rc is defined
+            - luks_part_name.rc == 0 
+            - luks_part_name.stdout is defined
+            - luks_part_name.stdout != '' 
+          register: luks_pvresize_result
+
+        - name: '{{ ansible_name_module }} | shell:lvresize | resize /dev/RHELCSB/Home VG' 
+          shell: >
+            lvresize -L +50G -r /dev/RHELCSB/Home
+          when:
+            #-  luks_pvresize_result is defined
+            #-  luks_pvresize_result.rc is defined
+            #-  luks_pvresize_result.rc == 0 
+            - luks_part_name.rc is defined
+            - luks_part_name.rc == 0 
+            - luks_part_name.stdout is defined
+            - luks_part_name.stdout != '' 
+          register: rhelcsbhome_resize_result
+
+        - name: '{{ ansible_name_module }} | shell:lvresize | resize /dev/RHELCSB/Home VG' 
+          shell: >
+            lvresize -l +100%FREE -r /dev/RHELCSB/Root
+          when:
+            #-  luks_pvresize_result is defined
+            #-  luks_pvresize_result.rc is defined
+            #-  luks_pvresize_result.rc == 0 
+            - luks_part_name.rc is defined
+            - luks_part_name.rc == 0 
+            - luks_part_name.stdout is defined
+            - luks_part_name.stdout != '' 
+          register: rhelcsbroot_resize_result
+

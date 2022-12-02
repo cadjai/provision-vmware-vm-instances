@@ -1,0 +1,5 @@
+[local]
+localhost ansible_connection=local ansible_user=root
+
+[registry]
+<registry-ip> ansible_connection=ssh ansible_user=core

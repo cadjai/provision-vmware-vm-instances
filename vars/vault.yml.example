@@ -1,0 +1,12 @@
+### PNG Vcenter cluster Variables ####################################
+vault_datacenter: ''
+vault_datastore: ''
+vault_vcenter_server: ''
+vault_vcenter_user: ''
+vault_vcenter_passwd: ''
+vault_folder: ''
+vault_network_id: ''
+vault_cluster_base_domain: ''
+vault_vsphere_cluster: ''
+######################################################################
+
