@@ -8,25 +8,6 @@ cluster_base_domain: '{{ vault_cluster_base_domain }}'
 cluster_name: ""
 registry_ca_file: "/tmp/ca-bundle.crt"
 registry_pull_secret_file: "/tmp/config.json"
-use_multi_cidr: "false"
-
-ntp_servers:
-- pool.ntp.org
-ntp_maxpoll: 4
-
-
-###################################
-# Console Banner variables
-###################################
-banner_name: 'classification-banner'
-banner_text: 'UNCLASSIFIED'
-banner_color: '#ffffff'
-banner_background_color: '#006400'
-banner_location: 'BannerTopBottom'
-banner_link: ''
-###################################
-# End Console Banner variables
-###################################
 
 ###################################
 # VMWare Vsphere Deployment Environment setup variables
@@ -131,8 +112,6 @@ newvm_names_list:
   #- name: 'master-1'
   #  ip: ''
   #- name: 'master-2'
-  #  ip: ''
-  #- name: cadjai-bastion
   #  ip: ''
   - name: bastion
     ip: ''
