@@ -7,7 +7,6 @@
   vars:
     module: "setup-bastion-vsphere"
     ansible_name_module: " Pre Cluster Installation | {{ module }}"
-    terraform_dir: "/root/platform/iac/shaman"
   pre_tasks:
      - name: '{{ ansible_name_module }} | Ensure required variables are set'
        block:
@@ -53,7 +52,7 @@
       shell: >
         {{ govc_binary_check.stdout }} folder.info -verbose=true -dc {{ datacenter }} {{ folder }}
       args:
-        chdir: '{{ terraform_dir }}'
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
         GOVC_INSECURE: "true"
         GOVC_PASSWORD: "{{ vcenter_passwd }}"
@@ -80,7 +79,7 @@
       shell: >
         {{ govc_binary_check.stdout }} folder.create -dc={{ datacenter }} {{ folder }}
       args:
-        chdir: '{{ terraform_dir }}'
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
         GOVC_INSECURE: "true"
         GOVC_PASSWORD: "{{ vcenter_passwd }}"
@@ -109,7 +108,7 @@
       shell: >
         {{ govc_binary_check.stdout }} vm.clone -vm={{ vm_template }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -on=false -force=true {{ item.name }}
       args:
-        chdir: '{{ terraform_dir }}'
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
         GOVC_INSECURE: "true"
         GOVC_PASSWORD: "{{ vcenter_passwd }}"
@@ -130,7 +129,7 @@
       shell: >
         {{ govc_binary_check.stdout }} vm.disk.change -vm='{{ folder }}/{{ item.name }}' -dc={{ datacenter }} -disk.label "Hard disk 1" -size {{ item.disk }} 
       args:
-        chdir: '{{ terraform_dir }}'
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
         GOVC_INSECURE: "true"
         GOVC_PASSWORD: "{{ vcenter_passwd }}"
@@ -158,7 +157,7 @@
       shell: >
         {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
       args:
-        chdir: '{{ terraform_dir }}'
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
         GOVC_INSECURE: "true"
         GOVC_PASSWORD: "{{ vcenter_passwd }}"
