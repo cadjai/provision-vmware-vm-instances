@@ -50,14 +50,6 @@
              that:
                - folder is defined and folder != ""
              msg: " the folder must be set and valid "
-         #- assert:
-         #    that:
-         #      - resource_pool_id is defined and resource_pool_id != ""
-         #    msg: " the resource_pool_id must be set and valid "
-         #- assert:
-         #    that:
-         #      - network_id is defined and network_id != ""
-         #    msg: " the network_id must be set and valid "
 
   tasks:
     - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
@@ -68,8 +60,8 @@
         - "not 'no govc' in govc_binary_check.stderr"
       register: govc_binary_check
 
-    - name: '{{ ansible_name_module }} | shell:govc | Create new vm from template'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Create new vm from template'
+      command: >
         {{ govc_binary_check.stdout }} vm.create -on=false -force=true -g={{ rhcos_template }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -net={{ vsphere_vm_network }} {{ item.name }}
       args:
         chdir: '{{ terraform_dir }}'
@@ -90,8 +82,8 @@
         - govc_binary_check.stdout != ''
       register: vmclone_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Clone vm template into new vm'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Clone vm template into new vm'
+      command: >
         {{ govc_binary_check.stdout }} vm.clone -on=false -force=true -vm={{ rhcos_template }} -folder={{ folder }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} {{ item.name }}
       args:
         chdir: '{{ terraform_dir }}'
@@ -111,8 +103,8 @@
         - govc_binary_check.stdout != ''
       register: vmclone_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Set Ignition Config on Cloned VM'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Set Ignition Config on Cloned VM'
+      command: >
         {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -e 'guestinfo.ignition.config.data={{ item.enc_ign_data }}' -e 'guestinfo.ignition.config.data.encoding=base64' -e 'disk.EnableUUID=TRUE'
       args:
         chdir: '{{ terraform_dir }}'
@@ -134,8 +126,8 @@
         - govc_binary_check.stdout != ''
       register: vm_ignition_update_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Update VM resource Config on Cloned VM'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Update VM resource Config on Cloned VM'
+      command: >
         {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -c={{ num_cpus[item.name.split('-')[0]] | default('4', true) }} -m={{ memory[item.name.split('-')[0]] | default('8', true) }} 
       args:
         chdir: '{{ terraform_dir }}'
@@ -159,8 +151,8 @@
         - govc_binary_check.stdout != ''
       register: vm_resource_update_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Set Static IP and networking on Cloned VM'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Set Static IP and networking on Cloned VM'
+      command: >
         {{ govc_binary_check.stdout }} vm.change -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -e 'guestinfo.afterburn.initrd.network-kargs=ip={{ item.ip }}::{{ gateway }}:{{ netmask }}:::none nameserver={{ dns_address }}'
       args:
         chdir: '{{ terraform_dir }}'
@@ -182,8 +174,8 @@
         - govc_binary_check.stdout != ''
       register: vm_staticip_update_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Set Static IP and networking on Cloned VM using customize'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Set Static IP and networking on Cloned VM using customize'
+      command: >
         {{ govc_binary_check.stdout }} vm.customize -vm={{ item.name }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -gateway={{ gateway }} -ip={{ item.ip }} -dns-server={{ dns_address }} -netmask={{ netmask }}
       args:
         chdir: '{{ terraform_dir }}'
@@ -207,8 +199,8 @@
         - govc_binary_check.stdout != ''
       register: vm_staticip_update_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Power on new vm'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Power on new vm'
+      command: >
         {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
       args:
         chdir: '{{ terraform_dir }}'

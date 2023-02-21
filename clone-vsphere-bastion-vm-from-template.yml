@@ -48,8 +48,8 @@
         - "not 'no govc' in govc_binary_check.stderr"
       register: govc_binary_check
 
-    - name: '{{ ansible_name_module }} | shell:govc | collect folder info' 
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | collect folder info' 
+      command: >
         {{ govc_binary_check.stdout }} folder.info -verbose=true -dc {{ datacenter }} {{ folder }}
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
@@ -75,8 +75,8 @@
         var: folder_info_result
         verbosity: 2
 
-    - name: '{{ ansible_name_module }} | shell:govc | create folder if it does not exist'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | create folder if it does not exist'
+      command: >
         {{ govc_binary_check.stdout }} folder.create -dc={{ datacenter }} {{ folder }}
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
@@ -104,8 +104,8 @@
         var: folder_create_result 
         verbosity: 2
 
-    - name: '{{ ansible_name_module }} | shell:govc | Clone vm template into new vm'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Clone vm template into new vm'
+      command: >
         {{ govc_binary_check.stdout }} vm.clone -vm={{ vm_template }} -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} -cluster={{ vsphere_cluster }} -on=false -force=true {{ item.name }}
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
@@ -125,8 +125,8 @@
         - govc_binary_check.stdout != ''
       register: vmclone_result
 
-    - name: '{{ ansible_name_module }} | shell:govc | Set Disk on Cloned VM'
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Set Disk on Cloned VM'
+      command: >
         {{ govc_binary_check.stdout }} vm.disk.change -vm='{{ folder }}/{{ item.name }}' -dc={{ datacenter }} -disk.label "Hard disk 1" -size {{ item.disk }} 
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
@@ -153,8 +153,8 @@
         var: vmclone_result
         verbosity: 2
 
-    - name: '{{ ansible_name_module }} | shell:govc | Power on new vm' 
-      shell: >
+    - name: '{{ ansible_name_module }} | command:govc | Power on new vm' 
+      command: >
         {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
