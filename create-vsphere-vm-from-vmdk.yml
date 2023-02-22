@@ -1,0 +1,90 @@
+#!/usr/local/bin/ansible-playbook --inventory=inventory
+- hosts: registry,local
+  become: true
+  vars_files:
+  - vars/environment.yml
+  - vars/vault.yml
+  vars:
+    module: "import-vmdk-vsphere"
+    ansible_name_module: " Pre Cluster Installation | {{ module }}"
+  pre_tasks:
+     - name: '{{ ansible_name_module }} | Ensure required variables are set'
+       block:
+         - assert:
+             that:
+               - datacenter is defined and datacenter != ""
+             msg: " the datacenter  must be set and valid "
+         - assert:
+             that:
+               - datastore is defined and datastore != ""
+             msg: " the datastore  must be set and valid "
+         - assert:
+             that:
+               - vcenter_server is defined and vcenter_server != ""
+             msg: " the vcenter_server must be set and valid "
+         - assert:
+             that:
+               - vsphere_cluster is defined and vsphere_cluster != ""
+             msg: " the vsphere_cluster must be set and valid "
+         - assert:
+             that:
+               - vcenter_user is defined and vcenter_user != ""
+             msg: " the vcenter_user must be set and valid "
+         - assert:
+             that:
+               - vcenter_passwd is defined and vcenter_passwd != ""
+             msg: " the vcenter_passwd must be set and valid "
+         - assert:
+             that:
+               - cluster_name  is defined and cluster_name != ""
+             msg: " the cluster_name must be set "
+         - assert:
+             that:
+               - cluster_base_domain is defined and cluster_base_domain != ""
+             msg: " the cluster_base_domain must be set and valid and will be the base domain used for cluster dns "
+         - assert:
+             that:
+               - guest_id is defined and guest_id != ""
+             msg: " the guest_id must be set and valid "
+         - assert:
+             that:
+               - folder is defined and folder != ""
+             msg: " the folder must be set and valid "
+
+  tasks:
+    - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
+      command: which govc
+      ignore_errors: yes
+      failed_when:
+        - govc_binary_check.rc > 0
+        - "not 'no govc' in govc_binary_check.stderr"
+      register: govc_binary_check
+
+    - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
+      set_fact:
+        vmdk_file_folder: "{{ (vmdk_file | basename).split('.vmdk') }}"
+      when:
+        - not vmdk_file_folder is defined or vmdk_file_folder == ''
+
+    - name: '{{ ansible_name_module }} | command:govc | Create VM from VMDK file '
+      command: >
+        {{ govc_binary_check.stdout }} vm.create -on=false -net={{ vsphere_vm_network }} {{ net2 }} -m={{ vm_memory_size | default('4096', true) }} -c={{ vm_cpu_count | default('2', true) }} -g={{ vm_template | default('rhel8_64Guest', true) }} -firmware=bios -disk={{ vmdk_file_folder }}/{{ (vmdk_file | basename) }} -disk.controller=ide -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ item.name }} 
+      args:
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      vars:
+        net2: "{{ '-net=' + vsphere_vm_network2 if vsphere_vm_network2 is defined and vsphere_vm_network2 != '' else '' }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_create_result
+
