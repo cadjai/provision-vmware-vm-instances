@@ -71,6 +71,63 @@
         var: vmdk_file_folder
         verbosity: 2
 
+    - name: '{{ ansible_name_module }} | shell:govc | collect folder info'
+      shell: >
+        {{ govc_binary_check.stdout }} folder.info -verbose=true -dc {{ datacenter }} {{ folder }}
+      args:
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      when:
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: folder_info_result
+      changed_when:
+      - folder_info_result.rc == 0
+      failed_when:
+      - '("folder" and "not found") not in folder_info_result.stderr'
+      - folder_info_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | shell:govc | create folder if it does not exist'
+      shell: >
+        {{ govc_binary_check.stdout }} folder.create -dc={{ datacenter }} {{ folder }}
+      args:
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      when:
+        - folder_info_result.stderr is defined
+        - '("folder" and "not found") in folder_info_result.stderr'
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: folder_create_result
+      changed_when:
+      - folder_create_result.rc == 0
+      failed_when:
+      - '"already exists" not in folder_create_result.stderr'
+      - folder_create_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | debug | Print create folder output'
+      debug:
+        var: folder_create_result
+        verbosity: 2
+
+
+    - name: '{{ ansible_name_module }} | debug | Print folder info output'
+      debug:
+        var: folder_info_result
+        verbosity: 2
+
     - name: '{{ ansible_name_module }} | command:govc | Create VM from VMDK file '
       command: >
         {{ govc_binary_check.stdout }} vm.create -on=false -force=true -net={{ vsphere_vm_network }} {{ net2 }} -m={{ vm_memory_size | default('4096', true) }} -c={{ vm_cpu_count | default('2', true) }} -g={{ vm_template | default('rhel8_64Guest', true) }} -firmware=bios -disk={{ vmdk_file_folder }}/{{ (vmdk_file | basename) }} -disk.controller=ide -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ item.name }} 

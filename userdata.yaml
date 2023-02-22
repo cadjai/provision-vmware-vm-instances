@@ -1,10 +1,16 @@
 #cloud-config
 users
 - name: admin
+  passwd: $6$/4EVLpEyyk/S1KN3$DdViPOLXfRRrnSlAUQGirZa8jerFIJ1Q4RcbfFF3l4YB7tJhzSTIYTHWQCSnmZsJDEy5aqFiIdmKpcPqNQHNO/
+  chpasswd: {expire: False}
+  ssh_pwauth: True
   sudo: "ALL=(ALL) NOPASSWD:ALL"
   ssh_authorized_keys:
   - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWi/W+gue5mxD9O2L89V8zxmTo9Tz1/Rbvzn20f/kBqFDMbeI9JEwnvrz6mgKGdCTeVE55yZ5i+ZJq54hCr6Lfqjs2sfEC9B1jWKtDf5c+iykPRVHr5BC8S3XzAsB+3ZfPL+38d7hwzF9fn/8/0aC2/eimJboLLP0MVpLIM8BUMycLBvQ/E8pQhIUkS8Wqn7/AiqVF5peMZsAK/1NojLf2dbBaBJ+XS79e7qbzPjmlTLvKa06As2eN6MnDbgfDOLZbwdnCI6lOmPWz5PFw30dkb8WhVt0K4YzjQ1jYMaJK38d7IZN5+qLMe8wsM4pCQ87PRTtG0F+RVuADWejFw8mj Claude Adjai claude@redhat.com 
 - name: root 
+  passwd: $6$/4EVLpEyyk/S1KN3$DdViPOLXfRRrnSlAUQGirZa8jerFIJ1Q4RcbfFF3l4YB7tJhzSTIYTHWQCSnmZsJDEy5aqFiIdmKpcPqNQHNO/
+  chpasswd: {expire: False}
+  ssh_pwauth: True
   sudo: "ALL=(ALL) NOPASSWD:ALL"
   ssh_authorized_keys:
   - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWi/W+gue5mxD9O2L89V8zxmTo9Tz1/Rbvzn20f/kBqFDMbeI9JEwnvrz6mgKGdCTeVE55yZ5i+ZJq54hCr6Lfqjs2sfEC9B1jWKtDf5c+iykPRVHr5BC8S3XzAsB+3ZfPL+38d7hwzF9fn/8/0aC2/eimJboLLP0MVpLIM8BUMycLBvQ/E8pQhIUkS8Wqn7/AiqVF5peMZsAK/1NojLf2dbBaBJ+XS79e7qbzPjmlTLvKa06As2eN6MnDbgfDOLZbwdnCI6lOmPWz5PFw30dkb8WhVt0K4YzjQ1jYMaJK38d7IZN5+qLMe8wsM4pCQ87PRTtG0F+RVuADWejFw8mj Claude Adjai claude@redhat.com
