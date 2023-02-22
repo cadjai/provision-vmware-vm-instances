@@ -117,6 +117,16 @@
             - metadata_file_exists.stat.exists | bool 
           register: metadata_b64
 
+        - name: '{{ ansible_name_module }} | debug | Print metadata b64 output'
+          ansible.builtin.debug:
+            var: metadata_b64
+            verbosity: 2
+          when:
+            - metadata_b64 is defined
+            - metadata_b64.stdout is defined
+            - metadata_b64.stdout != "" 
+
+
         - name: '{{ ansible_name_module }} | shell | create USERDATA for vmdk'
           shell: >
             gzip -c9 <{{ userdata_file }} | { base64 -w0 2>/dev/null || base64; }
@@ -127,9 +137,24 @@
             - userdata_file_exists.stat.exists | bool 
           register: userdata_b64
 
+        - name: '{{ ansible_name_module }} | debug | Print userdata b64 output'
+          ansible.builtin.debug:
+            var: userdata_b64 
+            verbosity: 2
+          when:
+            - userdata_b64 is defined
+            - userdata_b64.stdout is defined
+            - userdata_b64.stdout != "" 
+
+        - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
+          set_fact:
+            vmdk_file_folder: "{{ (vmdk_file | basename).split('.vmdk')[0] }}"
+          when:
+            - not vmdk_file_folder is defined or vmdk_file_folder == ''
+
         - name: '{{ ansible_name_module }} | command:govc | Import VMDK file into vcenter'
           command: >
-            {{ govc_binary_check.stdout }} import.vmdk -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ vmdk_file_exists.stat.path }}
+            {{ govc_binary_check.stdout }} import.vmdk -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ vmdk_file_exists.stat.path }} {{ vmdk_file_folder }}
           args:
             chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
           environment:
@@ -152,7 +177,7 @@
 
         - name: '{{ ansible_name_module }} | command:govc | Import VMDK file into vcenter'
           command: >
-            {{ govc_binary_check.stdout }} import.vmdk -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ vmdk_file_exists.stat.path }}
+            {{ govc_binary_check.stdout }} import.vmdk -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ vmdk_file_exists.stat.path }} {{ vmdk_file_folder }}
           args:
             chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
           environment:
@@ -173,10 +198,10 @@
             - vmdk_file_exists.stat.path is defined 
             - vmdk_file_exists.stat.path != ''
             - metadata_b64 is defined
-            - metadata_b64.sdtout is defined
-            - metadata_b64.sdtout != '' 
+            - metadata_b64.stdout is defined
+            - metadata_b64.stdout != "" 
             - userdata_b64 is defined
-            - userdata_b64.sdtout is defined
-            - userdata_b64.sdtout != '' 
+            - userdata_b64.stdout is defined
+            - userdata_b64.stdout != "" 
           register: vmdkimport_result
 

@@ -62,13 +62,18 @@
 
     - name: '{{ ansible_name_module }} | command:which | check if govc is installed '
       set_fact:
-        vmdk_file_folder: "{{ (vmdk_file | basename).split('.vmdk') }}"
+        vmdk_file_folder: "{{ (vmdk_file | basename).split('.vmdk')[0] }}"
       when:
         - not vmdk_file_folder is defined or vmdk_file_folder == ''
 
+    - name: '{{ ansible_name_module }} | debug | Print vmdk file folder output'
+      debug:
+        var: vmdk_file_folder
+        verbosity: 2
+
     - name: '{{ ansible_name_module }} | command:govc | Create VM from VMDK file '
       command: >
-        {{ govc_binary_check.stdout }} vm.create -on=false -net={{ vsphere_vm_network }} {{ net2 }} -m={{ vm_memory_size | default('4096', true) }} -c={{ vm_cpu_count | default('2', true) }} -g={{ vm_template | default('rhel8_64Guest', true) }} -firmware=bios -disk={{ vmdk_file_folder }}/{{ (vmdk_file | basename) }} -disk.controller=ide -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ item.name }} 
+        {{ govc_binary_check.stdout }} vm.create -on=false -force=true -net={{ vsphere_vm_network }} {{ net2 }} -m={{ vm_memory_size | default('4096', true) }} -c={{ vm_cpu_count | default('2', true) }} -g={{ vm_template | default('rhel8_64Guest', true) }} -firmware=bios -disk={{ vmdk_file_folder }}/{{ (vmdk_file | basename) }} -disk.controller=ide -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ item.name }} 
       args:
         chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
       environment:
@@ -87,4 +92,107 @@
         - govc_binary_check.stdout is defined
         - govc_binary_check.stdout != ''
       register: vm_create_result
+
+    - name: '{{ ansible_name_module }} | command:govc | Configure cloud-init for created VM'
+      when:
+        - config_cloudinit is defined
+        - config_cloudinit | bool
+        - metadata_file is defined
+        - metadata_file != ''
+        - userdata_file is defined
+        - userdata_file != ''
+      block:
+        - name: '{{ ansible_name_module }} | stat | Ensure metadata file exist'
+          ansible.builtin.stat:
+            path: "{{ metadata_file }}"
+          register: metadata_file_exists
+
+        - name: '{{ ansible_name_module }} | debug | Print metadata file exist test output'
+          ansible.builtin.debug:
+            var: metadata_file_exists
+            verbosity: 2
+          when:
+            - metadata_file_exists is defined
+
+        - name: '{{ ansible_name_module }} | stat | Ensure userdata file exist'
+          ansible.builtin.stat:
+            path: "{{ userdata_file }}"
+          register: userdata_file_exists
+
+        - name: '{{ ansible_name_module }} | debug | Print userdata file exist test output'
+          ansible.builtin.debug:
+            var: userdata_file_exists
+            verbosity: 2
+          when:
+            - userdata_file_exists is defined
+
+        - name: '{{ ansible_name_module }} | shell | create METADATA for vmdk'
+          shell: >
+            gzip -c9 <{{ metadata_file }} | { base64 -w0 2>/dev/null || base64; }
+          when:
+            - metadata_file_exists is defined
+            - metadata_file_exists.stat is defined
+            - metadata_file_exists.stat.exists is defined
+            - metadata_file_exists.stat.exists | bool
+          register: metadata_b64
+
+        - name: '{{ ansible_name_module }} | shell | create USERDATA for vmdk'
+          shell: >
+            gzip -c9 <{{ userdata_file }} | { base64 -w0 2>/dev/null || base64; }
+          when:
+            - userdata_file_exists is defined
+            - userdata_file_exists.stat is defined
+            - userdata_file_exists.stat.exists is defined
+            - userdata_file_exists.stat.exists | bool
+          register: userdata_b64
+
+        - name: '{{ ansible_name_module }} | command:govc | Set Disk on Cloned VM'
+          command: >
+            {{ govc_binary_check.stdout }} vm.change -vm={{ folder }}/{{ item.name }} -e=guestinfo.metadata={{ metadata_b64.stdout }} -e=guestinfo.metadata.encoding="gzip+base64" -e=guestinfo.userdata={{ metadata_b64.stdout }} -e=guestinfo.userdata.encoding="gzip+base64"
+          args:
+            chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+          environment:
+            GOVC_INSECURE: "true"
+            GOVC_PASSWORD: "{{ vcenter_passwd }}"
+            GOVC_USERNAME: "{{ vcenter_user }}"
+            GOVC_URL: "{{ vcenter_server }}"
+          loop: "{{ newvm_names_list }}"
+          when:
+            - newvm_names_list is defined
+            - newvm_names_list | length > 0
+            - metadata_b64 is defined
+            - metadata_b64.stdout is defined
+            - metadata_b64.stdout != ''
+            - userdata_b64 is defined
+            - userdata_b64.stdout is defined
+            - userdata_b64.stdout != ''
+          register: vm_cloudinit_config_result
+
+    - name: '{{ ansible_name_module }} | command:govc | Power on new vm'
+      command: >
+        {{ govc_binary_check.stdout }} vm.power -on -dc={{ datacenter }} {{ item.name }}
+      args:
+        chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+      environment:
+        GOVC_INSECURE: "true"
+        GOVC_PASSWORD: "{{ vcenter_passwd }}"
+        GOVC_USERNAME: "{{ vcenter_user }}"
+        GOVC_URL: "{{ vcenter_server }}"
+      loop: "{{ newvm_names_list }}"
+      when:
+        - newvm_names_list is defined
+        - newvm_names_list | length > 0
+        - govc_binary_check.rc is defined
+        - govc_binary_check.rc == 0
+        - govc_binary_check.stdout is defined
+        - govc_binary_check.stdout != ''
+      register: vm_poweron_result
+      failed_when:
+      - '"cannot be performed in the current state" not in vm_poweron_result.stderr'
+      - vm_poweron_result.rc != 0
+
+    - name: '{{ ansible_name_module }} | debug | Print vm poweron output'
+      debug:
+        var: vm_poweron_result
+        verbosity: 2
 
