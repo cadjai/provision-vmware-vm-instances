@@ -72,10 +72,60 @@
             path: "{{ vmdk_file }}"
           register: vmdk_file_exists
 
-        - name: '{{ ansible_name_module }} | stat | Ensure vmdk file exist'
+        - name: '{{ ansible_name_module }} | debug | Print vmdk file exist test output'
           ansible.builtin.debug:
             var: vmdk_file_exists
             verbosity: 2
+
+        - name: '{{ ansible_name_module }} | stat | Ensure metadata file exist'
+          ansible.builtin.stat:
+            path: "{{ metadata_file }}"
+          when:
+            - metadata_file is defined 
+            - metadata_file != ''
+          register: metadata_file_exists 
+
+        - name: '{{ ansible_name_module }} | debug | Print metadata file exist test output'
+          ansible.builtin.debug:
+            var: metadata_file_exists
+            verbosity: 2
+          when:
+            - metadata_file_exists is defined
+
+        - name: '{{ ansible_name_module }} | stat | Ensure userdata file exist'
+          ansible.builtin.stat:
+            path: "{{ userdata_file }}"
+          when:
+            - userdata_file is defined 
+            - userdata_file != ''
+          register: userdata_file_exists
+
+        - name: '{{ ansible_name_module }} | debug | Print userdata file exist test output'
+          ansible.builtin.debug:
+            var: userdata_file_exists
+            verbosity: 2
+          when:
+            - userdata_file_exists is defined
+
+        - name: '{{ ansible_name_module }} | shell | create METADATA for vmdk'
+          shell: >
+            gzip -c9 <{{ metadata_file }} | { base64 -w0 2>/dev/null || base64; }
+          when:
+            - metadata_file_exists is defined
+            - metadata_file_exists.stat is defined
+            - metadata_file_exists.stat.exists is defined
+            - metadata_file_exists.stat.exists | bool 
+          register: metadata_b64
+
+        - name: '{{ ansible_name_module }} | shell | create USERDATA for vmdk'
+          shell: >
+            gzip -c9 <{{ userdata_file }} | { base64 -w0 2>/dev/null || base64; }
+          when:
+            - userdata_file_exists is defined
+            - userdata_file_exists.stat is defined
+            - userdata_file_exists.stat.exists is defined
+            - userdata_file_exists.stat.exists | bool 
+          register: userdata_b64
 
         - name: '{{ ansible_name_module }} | command:govc | Import VMDK file into vcenter'
           command: >
@@ -97,5 +147,36 @@
             - vmdk_file_exists.stat.isreg | bool 
             - vmdk_file_exists.stat.path is defined 
             - vmdk_file_exists.stat.path != ''
+            - not metadata_b64 is defined or not userdata_b64 is defined
+          register: vmdkimport_result
+
+        - name: '{{ ansible_name_module }} | command:govc | Import VMDK file into vcenter'
+          command: >
+            {{ govc_binary_check.stdout }} import.vmdk -folder={{ folder }} -ds={{ datastore }} -dc={{ datacenter }} {{ vmdk_file_exists.stat.path }}
+          args:
+            chdir: '{{ terraform_dir | default(playbook_dir, true) }}'
+          environment:
+            GOVC_INSECURE: "true"
+            GOVC_PASSWORD: "{{ vcenter_passwd }}"
+            GOVC_USERNAME: "{{ vcenter_user }}"
+            GOVC_URL: "{{ vcenter_server }}"
+            METADATA: "{{ metadata_b64.stdout }}"
+            USERDATA: "{{ metadata_b64.stdout }}"
+          loop: "{{ newvm_names_list }}"
+          when:
+            - vmdk_file_exists is defined
+            - vmdk_file_exists.stat is defined
+            - vmdk_file_exists.stat.exists is defined
+            - vmdk_file_exists.stat.exists | bool 
+            - vmdk_file_exists.stat.isreg is defined
+            - vmdk_file_exists.stat.isreg | bool 
+            - vmdk_file_exists.stat.path is defined 
+            - vmdk_file_exists.stat.path != ''
+            - metadata_b64 is defined
+            - metadata_b64.sdtout is defined
+            - metadata_b64.sdtout != '' 
+            - userdata_b64 is defined
+            - userdata_b64.sdtout is defined
+            - userdata_b64.sdtout != '' 
           register: vmdkimport_result
 
